@@ -57,9 +57,33 @@ export function loadAiConfig(): UserAiConfig | null {
   }
 }
 
-export function saveAiConfig(cfg: UserAiConfig): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+/**
+ * 保存配置。返回是否真的写进去了 —— 失败时把原因带回界面，
+ * 而不是静默吞掉（之前「点保存没反应」就是被吞在这里）。
+ */
+export function saveAiConfig(cfg: UserAiConfig): { ok: boolean; error?: string } {
+  if (typeof window === 'undefined') {
+    return { ok: false, error: '当前环境不支持本地存储' };
+  }
+  try {
+    const payload = JSON.stringify(cfg);
+    window.localStorage.setItem(STORAGE_KEY, payload);
+
+    // 读回验证：某些 WebView 的 setItem 会静默失败
+    const back = window.localStorage.getItem(STORAGE_KEY);
+    if (!back) return { ok: false, error: '写入后读不到，浏览器可能禁用了本地存储' };
+    const parsed = JSON.parse(back) as Partial<UserAiConfig>;
+    if (parsed.apiKey !== cfg.apiKey) return { ok: false, error: '写入内容与预期不一致' };
+
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/quota/i.test(msg)) return { ok: false, error: '本地存储空间已满' };
+    if (/security|denied|not allowed/i.test(msg)) {
+      return { ok: false, error: '浏览器禁止了本地存储（隐私模式或安全策略）' };
+    }
+    return { ok: false, error: msg };
+  }
 }
 
 export function clearAiConfig(): void {
