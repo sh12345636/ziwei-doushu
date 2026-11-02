@@ -1,0 +1,33 @@
+node_modules/
+node_modules
+.next/
+.vercel/
+.env*
+!.env.example
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# 静态导出产物（npm run build 生成）
+out/
+
+# 构建日志
+*.log
+
+# ─── Capacitor / Android ───
+android/.gradle/
+android/.idea/
+android/.cxx/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# ─── iOS（若启用）───
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/

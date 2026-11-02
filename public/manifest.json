@@ -1,0 +1,34 @@
+{
+  "name": "紫微命盘 · 倪海厦正宗紫微斗数",
+  "short_name": "紫微命盘",
+  "description": "离线排盘引擎 + 自备 AI 模型的紫微斗数命盘工具，基于倪海厦《天纪》体系",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "background_color": "#060c16",
+  "theme_color": "#0a1220",
+  "lang": "zh-CN",
+  "categories": ["lifestyle", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">紫微命盘</string>
+    <string name="title_activity_main">紫微命盘</string>
+    <string name="package_name">cn.ziwei.doushu</string>
+    <string name="custom_url_scheme">cn.ziwei.doushu</string>
+</resources>
