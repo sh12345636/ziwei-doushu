@@ -55,6 +55,26 @@ jobs:
           fi
           npx cap sync android
 
+      # 固定 debug 签名：缓存 keystore，否则每次构建签名都变，升级必须卸载重装
+      - name: 缓存 debug 签名证书
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: 确保签名证书存在
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "已生成新的 debug keystore"
+          else
+            echo "复用缓存的 debug keystore（签名保持一致）"
+          fi
+
       - name: 赋予 gradlew 执行权限
         run: chmod +x android/gradlew
 
