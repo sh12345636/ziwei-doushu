@@ -28,6 +28,7 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const [model, setModel] = useState(DEFAULT_AI_CONFIG.model);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -38,6 +39,7 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
       setModel(cfg.model);
     }
     setSaved(false);
+    setError('');
   }, [open]);
 
   if (!open) return null;
@@ -45,6 +47,7 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const applyPreset = (p: { baseURL: string; model: string }) => {
     setBaseURL(p.baseURL);
     setModel(p.model);
+    setError('');
   };
 
   const handleSave = () => {
@@ -53,17 +56,37 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
       apiKey: apiKey.trim(),
       model: model.trim(),
     };
-    if (!cfg.baseURL || !cfg.apiKey || !cfg.model) return;
-    saveAiConfig(cfg);
+
+    // 逐项校验，明确指出缺哪一项（以前是静默 return，所以「点了没反应」）
+    const missing: string[] = [];
+    if (!cfg.baseURL) missing.push('接口地址');
+    if (!cfg.apiKey) missing.push('API 密钥');
+    if (!cfg.model) missing.push('模型名称');
+    if (missing.length) {
+      setError(`请先填写：${missing.join('、')}`);
+      setSaved(false);
+      return;
+    }
+
+    const result = saveAiConfig(cfg);
+    if (!result.ok) {
+      setError(`保存失败：${result.error ?? '未知原因'}`);
+      setSaved(false);
+      return;
+    }
+
+    setError('');
     setSaved(true);
     onSaved?.();
-    setTimeout(() => onClose(), 600);
+    // 留足时间让人看到「已保存 ✓」，别一闪而过
+    setTimeout(() => onClose(), 1200);
   };
 
   const handleClear = () => {
     clearAiConfig();
     setApiKey('');
     setSaved(false);
+    setError('');
     onSaved?.();
   };
 
@@ -179,12 +202,37 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
           排盘、看盘、古籍不需要密钥。
         </p>
 
+        {/* 错误 / 成功提示 */}
+        {error && (
+          <div
+            className="text-[11px] rounded-lg px-3 py-2 mb-3 leading-relaxed"
+            style={{
+              color: '#ff8a8a',
+              background: 'rgba(255,80,80,0.08)',
+              border: '1px solid rgba(255,80,80,0.25)',
+            }}
+          >
+            ⚠ {error}
+          </div>
+        )}
+        {saved && !error && (
+          <div
+            className="text-[11px] rounded-lg px-3 py-2 mb-3"
+            style={{
+              color: '#10b981',
+              background: 'rgba(16,185,129,0.08)',
+              border: '1px solid rgba(16,185,129,0.25)',
+            }}
+          >
+            ✓ 已保存到本机，可以开始用 AI 解读了
+          </div>
+        )}
+
         {/* 按钮 */}
         <div className="flex gap-2">
           <button
             onClick={handleSave}
-            disabled={!baseURL.trim() || !apiKey.trim() || !model.trim()}
-            className="flex-1 rounded-lg py-2 text-xs font-medium transition-all disabled:opacity-30"
+            className="flex-1 rounded-lg py-2 text-xs font-medium transition-all"
             style={{
               background: 'rgba(212,168,67,0.15)',
               border: '1px solid rgba(212,168,67,0.3)',
