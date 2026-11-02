@@ -3,9 +3,17 @@
  * AiSettingsModal —— 用户自己填 AI 配置（纯静态 APP 模式）
  *
  * 密钥只存在这台设备的 localStorage 里，不上传任何服务器。
- * 用户也可以随时清空。
+ *
+ * ⚠️ 关于输入可靠性（2026-11-03 修）：
+ * 在 Android WebView 里，受控组件的 onChange 在「密码框自动填充 / 粘贴 / 输入法组合」
+ * 等场景下可能不触发，导致界面上明明填了，state 里却是空的 —— 表现出来就是
+ * 「填了密钥还提示要填写」。故这里做了三重保险：
+ *   1. onChange + onInput 双重绑定（onInput 更底层）
+ *   2. 保存时用 ref 直接读 DOM 真实值，不依赖 state
+ *   3. 每栏实时显示字符数，让用户能直接看出输入有没有进去
+ * 另外密钥框默认不再用 type=password（部分 WebView 的密码框行为异常）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AI_PRESETS,
   DEFAULT_AI_CONFIG,
@@ -26,9 +34,13 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const [baseURL, setBaseURL] = useState(DEFAULT_AI_CONFIG.baseURL);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(DEFAULT_AI_CONFIG.model);
-  const [showKey, setShowKey] = useState(false);
+  const [hideKey, setHideKey] = useState(true);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+
+  const baseRef = useRef<HTMLInputElement>(null);
+  const keyRef = useRef<HTMLInputElement>(null);
+  const modelRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,28 +54,52 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
     setError('');
   }, [open]);
 
+  // 打开后把 DOM 里的值也同步一遍（受控组件的 defaultValue 与 state 可能不同步）
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      const cfg = loadAiConfig();
+      if (cfg) {
+        if (baseRef.current) baseRef.current.value = cfg.baseURL;
+        if (keyRef.current) keyRef.current.value = cfg.apiKey;
+        if (modelRef.current) modelRef.current.value = cfg.model;
+      }
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
   if (!open) return null;
+
+  /** 读输入框真实值：优先 DOM，退路才是 state */
+  const readValue = (ref: React.RefObject<HTMLInputElement | null>, fallback: string): string => {
+    const domVal = ref.current?.value;
+    if (typeof domVal === 'string' && domVal.length > 0) return domVal.trim();
+    return fallback.trim();
+  };
 
   const applyPreset = (p: { baseURL: string; model: string }) => {
     setBaseURL(p.baseURL);
     setModel(p.model);
+    if (baseRef.current) baseRef.current.value = p.baseURL;
+    if (modelRef.current) modelRef.current.value = p.model;
     setError('');
   };
 
   const handleSave = () => {
+    // 以 DOM 真实值为准
     const cfg: UserAiConfig = {
-      baseURL: baseURL.trim(),
-      apiKey: apiKey.trim(),
-      model: model.trim(),
+      baseURL: readValue(baseRef, baseURL),
+      apiKey: readValue(keyRef, apiKey),
+      model: readValue(modelRef, model),
     };
 
-    // 逐项校验，明确指出缺哪一项（以前是静默 return，所以「点了没反应」）
     const missing: string[] = [];
     if (!cfg.baseURL) missing.push('接口地址');
     if (!cfg.apiKey) missing.push('API 密钥');
     if (!cfg.model) missing.push('模型名称');
     if (missing.length) {
-      setError(`请先填写：${missing.join('、')}`);
+      const detail = `接口地址 ${cfg.baseURL.length} 字 / 密钥 ${cfg.apiKey.length} 字 / 模型 ${cfg.model.length} 字`;
+      setError(`请先填写：${missing.join('、')}（当前读到：${detail}）`);
       setSaved(false);
       return;
     }
@@ -78,23 +114,32 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
     setError('');
     setSaved(true);
     onSaved?.();
-    // 留足时间让人看到「已保存 ✓」，别一闪而过
     setTimeout(() => onClose(), 1200);
   };
 
   const handleClear = () => {
     clearAiConfig();
     setApiKey('');
+    if (keyRef.current) keyRef.current.value = '';
     setSaved(false);
     setError('');
     onSaved?.();
   };
 
-  const inputStyle = {
+  const inputStyle: React.CSSProperties = {
     background: 'var(--t-card)',
     border: '1px solid var(--t-border)',
     color: 'var(--t-text)',
-  } as const;
+  };
+
+  const counter = (n: number, empty: string) => (
+    <span
+      className="text-[9px] ml-1"
+      style={{ color: n > 0 ? '#10b981' : 'var(--t-faint)' }}
+    >
+      {n > 0 ? `${n} 字符` : empty}
+    </span>
+  );
 
   return (
     <div
@@ -147,11 +192,18 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
         <div className="mb-3">
           <label className="text-[10px] tracking-wider" style={{ color: 'var(--t-faint)' }}>
             接口地址（Base URL）
+            {counter(baseURL.length, '未填')}
           </label>
           <input
+            ref={baseRef}
             value={baseURL}
             onChange={(e) => setBaseURL(e.target.value)}
+            onInput={(e) => setBaseURL((e.target as HTMLInputElement).value)}
             placeholder="https://api.deepseek.com/v1"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="w-full mt-1 rounded-lg px-3 py-2 text-xs focus:outline-none"
             style={inputStyle}
           />
@@ -161,23 +213,29 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
         <div className="mb-3">
           <label className="text-[10px] tracking-wider" style={{ color: 'var(--t-faint)' }}>
             API 密钥
+            {counter(apiKey.length, '未填')}
           </label>
           <div className="relative mt-1">
             <input
-              type={showKey ? 'text' : 'password'}
+              ref={keyRef}
+              type={hideKey ? 'password' : 'text'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
+              onInput={(e) => setApiKey((e.target as HTMLInputElement).value)}
               placeholder="sk-..."
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               className="w-full rounded-lg px-3 py-2 pr-14 text-xs focus:outline-none"
               style={inputStyle}
             />
             <button
-              onClick={() => setShowKey(!showKey)}
+              onClick={() => setHideKey(!hideKey)}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded"
               style={{ color: 'var(--t-faint)' }}
             >
-              {showKey ? '隐藏' : '显示'}
+              {hideKey ? '显示' : '隐藏'}
             </button>
           </div>
         </div>
@@ -186,11 +244,18 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
         <div className="mb-4">
           <label className="text-[10px] tracking-wider" style={{ color: 'var(--t-faint)' }}>
             模型名称
+            {counter(model.length, '未填')}
           </label>
           <input
+            ref={modelRef}
             value={model}
             onChange={(e) => setModel(e.target.value)}
+            onInput={(e) => setModel((e.target as HTMLInputElement).value)}
             placeholder="deepseek-chat"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="w-full mt-1 rounded-lg px-3 py-2 text-xs focus:outline-none"
             style={inputStyle}
           />
