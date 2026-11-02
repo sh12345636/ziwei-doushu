@@ -42,8 +42,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: 配置 Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 检查 runner 自带的 Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME" | head -10
+          "$ANDROID_HOME"/platform-tools/adb --version || true
 
       - name: 生成 / 同步 Android 工程
         run: |
