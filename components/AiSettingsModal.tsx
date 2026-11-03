@@ -22,6 +22,7 @@ import {
   saveAiConfig,
   type UserAiConfig,
 } from '@/lib/ai/client';
+import { APP_VERSION_LABEL } from '@/lib/version';
 
 interface Props {
   open: boolean;
@@ -34,7 +35,7 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const [baseURL, setBaseURL] = useState(DEFAULT_AI_CONFIG.baseURL);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(DEFAULT_AI_CONFIG.model);
-  const [hideKey, setHideKey] = useState(true);
+  const [hideKey, setHideKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
@@ -115,6 +116,14 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
     setSaved(true);
     onSaved?.();
     setTimeout(() => onClose(), 1200);
+  };
+
+  /** 切换显隐：先把 DOM 里的真实值同步进 state，再重渲染，
+   *  否则受控组件可能用空 state 覆盖掉刚输入的密钥 */
+  const toggleHide = () => {
+    const domVal = keyRef.current?.value;
+    if (typeof domVal === 'string') setApiKey(domVal);
+    setHideKey((v) => !v);
   };
 
   const handleClear = () => {
@@ -231,7 +240,7 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
               style={inputStyle}
             />
             <button
-              onClick={() => setHideKey(!hideKey)}
+              onClick={toggleHide}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded"
               style={{ color: 'var(--t-faint)' }}
             >
@@ -266,6 +275,14 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
           密钥存在这台设备的浏览器里。换设备或清理浏览器数据后需要重新填写。
           排盘、看盘、古籍不需要密钥。
         </p>
+
+        {/* 版本号 */}
+        <div
+          className="text-[9px] text-center mb-3"
+          style={{ color: 'var(--t-faint)', opacity: 0.55, letterSpacing: '0.1em' }}
+        >
+          紫微命盘 {APP_VERSION_LABEL}
+        </div>
 
         {/* 错误 / 成功提示 */}
         {error && (

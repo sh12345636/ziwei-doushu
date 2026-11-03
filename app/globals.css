@@ -58,6 +58,42 @@
   --r-pill:999px;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   兼容层：历史组件的 --t-* 命名 → 当前设计 token
+   （152 处 var(--t-*) 引用，若缺失会让配色/卡片底色/边框全部失效）
+   值是 var() 引用，会跟随 [data-theme] 自动切换，无需在 dark 里重复
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --t-bg:          var(--bg-0);
+  --t-card:        var(--bg-card);
+  --t-surface:     var(--bg-1);
+  --t-border:      var(--bdr);
+  --t-border-med:  var(--bdr-med);
+  --t-border-acc:  var(--ac-bdr);
+  --t-text:        var(--tx-1);
+  --t-text1:       var(--tx-0);
+  --t-text2:       var(--tx-2);
+  --t-faint:       var(--tx-3);
+  --t-gold:        var(--ac);
+  --t-gold-dim:    var(--ac-dim);
+  --t-shadow-sm:   var(--sh-sm);
+  --t-shadow-md:   var(--sh-md);
+}
+
+/* 组件里用到的卡片样式（原来只在注释里提过，CSS 中并不存在） */
+.card-glass {
+  background: var(--bg-card);
+  border: 1px solid var(--bdr);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.card-inner {
+  background: var(--ac-bg);
+  border: 1px solid var(--bdr);
+  border-radius: var(--r-sm, 8px);
+}
+
+
 /* ─── 暗色模式 Token 覆盖 ──────────────────────────────── */
 [data-theme="dark"] {
   --bg-0: #020810;

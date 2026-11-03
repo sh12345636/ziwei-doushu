@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ZiweiChart, Palace } from '@/lib/ziwei/types';
 import type { TimeView } from './TimeNav';
@@ -196,6 +196,8 @@ export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: I
   const [loading, setLoading] = useState(false);
   const [activeTopic, setActiveTopic] = useState<string>('overview');
   const [showSettings, setShowSettings] = useState(false);
+  // 命盘转文本会跑 1100 行格局规则，缓存住别每轮对话都重算
+  const chartText = useMemo(() => chartToPromptText(chart), [chart]);
   const messagesRef = useRef<Message[]>([]); // always-current copy for closures
   const loadingRef = useRef(false);
   const autoLoaded = useRef(false);
@@ -298,7 +300,6 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
       let assistantText = '';
 
-      const chartText = chartToPromptText(chart);
       const msgs = buildInterpretMessages(chartText, apiMessages);
 
       for await (const delta of streamChatClient(cfg, msgs, {
@@ -369,7 +370,10 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
   };
 
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden card-glass">
+    <div
+      className="flex flex-col rounded-xl overflow-hidden card-glass"
+      style={{ height: "min(70dvh, 680px)", minHeight: 360 }}
+    >
 
       {/* ── Topic buttons ── */}
       <div className="flex-shrink-0 px-2 pt-2.5 pb-2" style={{ borderBottom: '1px solid var(--t-border)' }}>

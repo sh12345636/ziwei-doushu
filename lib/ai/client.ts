@@ -156,36 +156,62 @@ export async function* streamChatClient(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  /** SSE 事件里可能出现的字段 */
+  type StreamEvent = {
+    choices?: { delta?: { content?: string } }[];
+    error?: { message?: string };
+  };
 
-    let idx: number;
-    while ((idx = buffer.search(/\r?\n\r?\n/)) !== -1) {
-      const rawEvent = buffer.slice(0, idx);
-      buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, '');
+  /** 解析一个 SSE 事件块，把 delta 逐条吐出去 */
+  const parseEvent = (rawEvent: string): string[] => {
+    const out: string[] = [];
+    for (const line of rawEvent.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
 
-      for (const line of rawEvent.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === '[DONE]') continue;
-        try {
-          const json = JSON.parse(payload) as {
-            choices?: { delta?: { content?: string } }[];
-            error?: { message?: string };
-          };
-          if (json.error?.message) throw new Error(json.error.message);
-          const delta = json.choices?.[0]?.delta?.content;
-          if (delta) yield delta;
-        } catch (e) {
-          if (e instanceof Error && e.message && !e.message.startsWith('Unexpected')) {
-            // 服务端在流里塞了错误
-            if (/error/i.test(e.message)) throw e;
-          }
-        }
+      // JSON 解析失败 = 坏事件，跳过即可，绝不能当成致命错误
+      let json: StreamEvent | null = null;
+      try {
+        json = JSON.parse(payload) as StreamEvent;
+      } catch {
+        continue;
+      }
+      if (!json) continue;
+
+      // 服务端在流里塞了错误：务必抛出来，否则用户只会看到空回复
+      if (json.error?.message) {
+        throw new Error(`模型返回错误：${json.error.message}`);
+      }
+
+      const delta = json.choices?.[0]?.delta?.content;
+      if (delta) out.push(delta);
+    }
+    return out;
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let idx: number;
+      while ((idx = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, '');
+        for (const d of parseEvent(rawEvent)) yield d;
       }
     }
+
+    // 流结束时缓冲区可能残留最后一个事件（有些服务端末尾不带空行）
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      for (const d of parseEvent(buffer)) yield d;
+    }
+  } finally {
+    // 提前退出（用户取消/抛错）时释放底层连接
+    reader.cancel().catch(() => undefined);
   }
 }

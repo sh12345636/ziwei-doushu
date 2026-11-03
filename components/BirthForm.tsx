@@ -5,6 +5,11 @@ import type { BirthInfo } from '@/lib/ziwei/types';
 import { SHICHEN } from '@/lib/ziwei/constants';
 import { useTheme } from '@/components/ThemeProvider';
 import { PROVINCES } from '@/lib/ziwei/cities';
+import {
+  calculateTrueSolarTime,
+  resolveZiweiDayOffset,
+  shiftGregorianDate,
+} from '@/lib/ziwei/true-solar-time';
 
 export interface BirthFormState {
   name: string;
@@ -31,14 +36,11 @@ interface BirthFormProps {
 
 const SHICHEN_NAMES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 
-/** 根据北京时间 + 经度计算真太阳时时辰支 (0-11) */
-function calcTrueSolarBranch(clockHour: number, clockMinute: number, longitude: number): number {
-  const clockMins = clockHour * 60 + clockMinute;
-  const offset = (longitude - 120) * 4;
-  const solar = ((clockMins + offset) % 1440 + 1440) % 1440;
-  if (solar >= 1380 || solar < 60) return 0;
-  return Math.floor((solar - 60) / 120) + 1;
-}
+/**
+ * 旧的简化算法（已废弃，保留说明以免有人再抄回去）：
+ *   offset 只有 (经度-120)*4，缺均时差（±14~16分钟），也不处理晚子时换日。
+ *   完整实现见 lib/ziwei/true-solar-time.ts，本组件已在下方接入。
+ */
 
 /** 检查日期是否合法 */
 function isValidDate(y: number, m: number, d: number): boolean {
@@ -79,14 +81,39 @@ export default function BirthForm({ onSubmit, loading, initialData, onFormSave, 
     return prov ? prov.cities : [];
   }, [form.province]);
 
-  const branch = useMemo(() => {
-    if (form.unknownTime) return 0;
-    return calcTrueSolarBranch(
-      parseInt(form.clockHour) || 0,
-      parseInt(form.clockMinute) || 0,
-      form.longitude,
-    );
-  }, [form.clockHour, form.clockMinute, form.longitude, form.unknownTime]);
+  // 真太阳时：经度修正 + 均时差 + 跨日
+  // （以前这里只有 (经度-120)*4，缺均时差、也不处理晚子时换日，23:55 生人会差一整天）
+  const solarResult = useMemo(() => {
+    if (form.unknownTime) return null;
+    const yy = parseInt(form.year) || 0;
+    const mm = parseInt(form.month) || 0;
+    const dd = parseInt(form.day) || 0;
+    if (!yy || !mm || !dd) return null;
+    try {
+      return calculateTrueSolarTime({
+        year: yy,
+        month: mm,
+        day: dd,
+        clockHour: parseInt(form.clockHour) || 0,
+        clockMinute: parseInt(form.clockMinute) || 0,
+        longitude: form.longitude,
+      });
+    } catch {
+      return null;
+    }
+  }, [form.year, form.month, form.day, form.clockHour, form.clockMinute, form.longitude, form.unknownTime]);
+
+  const branch = form.unknownTime ? 0 : (solarResult?.branch ?? 0);
+
+  // 排盘日：晚子时（23:00 之后）按次日排盘
+  const chartDate = useMemo(() => {
+    const yy = parseInt(form.year) || 0;
+    const mm = parseInt(form.month) || 0;
+    const dd = parseInt(form.day) || 0;
+    if (!yy || !mm || !dd || !solarResult) return { year: yy, month: mm, day: dd };
+    const off = resolveZiweiDayOffset(solarResult, 'next-day');
+    return shiftGregorianDate({ year: yy, month: mm, day: dd }, off);
+  }, [form.year, form.month, form.day, solarResult]);
 
   const offsetMin = Math.round((form.longitude - 120) * 4);
   const shichenInfo = SHICHEN[branch];
@@ -145,7 +172,22 @@ export default function BirthForm({ onSubmit, loading, initialData, onFormSave, 
     setTouched({ year: true, month: true, day: true });
     if (hasError) return;
     onFormSave?.({ ...form });
-    onSubmit({ year: y, month: m, day: d, hour: branch, gender: form.gender, name: form.name || undefined, province: form.province || undefined, city: form.city || undefined, longitude: form.province ? form.longitude : undefined });
+    onSubmit({
+      year: chartDate.year,
+      month: chartDate.month,
+      day: chartDate.day,
+      hour: branch,
+      gender: form.gender,
+      name: form.name || undefined,
+      province: form.province || undefined,
+      city: form.city || undefined,
+      longitude: form.province ? form.longitude : undefined,
+      origInput: {
+        year: y, month: m, day: d,
+        clockHour: parseInt(form.clockHour) || 0,
+        clockMinute: parseInt(form.clockMinute) || 0,
+      },
+    });
   };
 
   // ─── 样式变量 ────────────────────────────────────────────

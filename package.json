@@ -1,6 +1,6 @@
 {
   "name": "ziwei-master",
-  "version": "0.1.0",
+  "version": "1.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
@@ -39,5 +39,6 @@
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5"
-  }
+  },
+  "description": "紫微命盘 · 倪海厦体系 · 纯静态 PWA + 可打包 APK"
 }

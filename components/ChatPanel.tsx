@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ZiweiChart } from '@/lib/ziwei/types';
 import { chartToPromptText } from '@/lib/ai/chart-context';
@@ -34,6 +34,8 @@ export default function ChatPanel({ chart }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // 命盘转文本会跑格局规则库，缓存住
+  const chartText = useMemo(() => chartToPromptText(chart), [chart]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,7 +59,6 @@ export default function ChatPanel({ chart }: ChatPanelProps) {
         return;
       }
 
-      const chartText = chartToPromptText(chart);
       const apiMessages = buildInterpretMessages(chartText, [...messages, userMsg]);
 
       let assistantText = '';
