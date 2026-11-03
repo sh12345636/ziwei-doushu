@@ -22,6 +22,7 @@ import {
   saveAiConfig,
   type UserAiConfig,
   fetchAvailableModels,
+  formatUpstreamError,
 } from '@/lib/ai/client';
 import { APP_VERSION_LABEL } from '@/lib/version';
 
@@ -191,7 +192,8 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
       if (res.ok) {
         setTestResult({ ok: true, msg: `✓ 连接成功（HTTP ${res.status}），配置可用` });
       } else {
-        setTestResult({ ok: false, msg: `HTTP ${res.status}：${body.slice(0, 220)}` });
+        // 上游的原始 JSON 用户看不懂，翻成中文提示
+        setTestResult({ ok: false, msg: '✗ ' + formatUpstreamError(res.status, body) });
       }
     } catch (e) {
       const isAbort = e instanceof DOMException && e.name === 'AbortError';

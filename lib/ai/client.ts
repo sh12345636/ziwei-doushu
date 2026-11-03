@@ -155,13 +155,7 @@ export async function* streamChatClient(
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    if (res.status === 401) {
-      throw new Error('密钥无效（401）。请到「⚙ 模型设置」检查 API Key 是否填对、是否已过期。');
-    }
-    if (res.status === 402) throw new Error('账户余额不足（402）。请到供应商后台充值。');
-    if (res.status === 404) throw new Error(`接口或模型名不存在（404）。请检查模型名「${cfg.model}」是否正确。`);
-    if (res.status === 429) throw new Error('请求太频繁（429），稍等一下再试。');
-    throw new Error(`模型接口返回 ${res.status}${detail ? `：${detail.slice(0, 200)}` : ''}`);
+    throw new Error(formatUpstreamError(res.status, detail));
   }
 
   if (!res.body) throw new Error('模型没有返回内容流');
@@ -297,17 +291,14 @@ export async function fetchAvailableModels(cfg: {
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${detail ? `：${detail.slice(0, 150)}` : ''}`);
+      throw new Error(formatUpstreamError(res.status, detail));
     }
 
     const json = (await res.json()) as unknown;
-    const data = (json as { data?: unknown }).data;
-    if (!Array.isArray(data)) throw new Error('返回格式不是 OpenAI 兼容的模型列表');
-
-    const ids = data
-      .map((m) => (m as { id?: unknown }).id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
-
+    const ids = extractModelIds(json);
+    if (!ids.length) {
+      throw new Error('这个服务没有返回可识别的模型列表（可能不支持 /models 接口），请手动填写模型名');
+    }
     return Array.from(new Set(ids)).sort();
   } catch (e) {
     const isAbort = e instanceof DOMException && e.name === 'AbortError';
@@ -316,4 +307,81 @@ export async function fetchAvailableModels(cfg: {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 把上游返回的错误体翻成人话。
+ *
+ * 上游（DeepSeek / 各中转站）一般返回：
+ *   {"error":{"message":"Service is too busy...","type":"service_unavailable_error"}}
+ * 直接甩原始 JSON 给用户看不懂，这里提取出 message 并按状态码给中文提示。
+ */
+export function formatUpstreamError(status: number, body: string): string {
+  let upstreamMsg = '';
+  try {
+    const j = JSON.parse(body) as { error?: { message?: string } | string; message?: string };
+    if (typeof j.error === 'string') upstreamMsg = j.error;
+    else if (j.error && typeof j.error === 'object' && j.error.message) upstreamMsg = j.error.message;
+    else if (typeof j.message === 'string') upstreamMsg = j.message;
+  } catch {
+    // 不是 JSON，退回截断原文
+    upstreamMsg = body.replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
+  const tail = upstreamMsg ? `（上游原话：${upstreamMsg.slice(0, 160)}）` : '';
+
+  switch (status) {
+    case 401:
+      return `密钥无效（401）。请检查 API Key 是否填对、是否已过期或额度用完。${tail}`;
+    case 402:
+      return `账户余额不足（402）。请到供应商后台充值。${tail}`;
+    case 403:
+      return `没有权限（403）。可能是密钥权限不足，或该模型需要额外开通。${tail}`;
+    case 404:
+      return `接口或模型不存在（404）。请检查「接口地址」是否以 /v1 结尾、模型名是否正确。${tail}`;
+    case 429:
+      return `请求太频繁（429），稍等一会儿再试。${tail}`;
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return `上游服务暂时不可用（${status}）。这是模型供应商自己的问题，不是你的配置错，过几分钟再试或换个服务商。${tail}`;
+    default:
+      return `模型接口返回 ${status}${tail}`;
+  }
+}
+
+/**
+ * 从各种可能的上游响应里抽出模型名列表。
+ *
+ * 常见格式：
+ *   1. OpenAI 标准： {"data":[{"id":"model-a"},...]}
+ *   2. 变体：        {"models":[{"id":"model-a"},...]}  或 {"models":["model-a",...]}
+ *   3. 直接数组：    [{"id":"model-a"},...]  或 ["model-a",...]
+ */
+export function extractModelIds(json: unknown): string[] {
+  const pick = (arr: unknown): string[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((m) => {
+        if (typeof m === 'string') return m;
+        if (m && typeof m === 'object') {
+          const o = m as { id?: unknown; name?: unknown; model?: unknown };
+          if (typeof o.id === 'string') return o.id;
+          if (typeof o.name === 'string') return o.name;
+          if (typeof o.model === 'string') return o.model;
+        }
+        return '';
+      })
+      .filter((s): s is string => typeof s === 'string' && s.length > 0);
+  };
+
+  if (Array.isArray(json)) return pick(json);
+
+  const o = json as { data?: unknown; models?: unknown; result?: unknown };
+  if (Array.isArray(o?.data)) return pick(o.data);
+  if (Array.isArray(o?.models)) return pick(o.models);
+  if (Array.isArray(o?.result)) return pick(o.result);
+
+  return [];
 }
