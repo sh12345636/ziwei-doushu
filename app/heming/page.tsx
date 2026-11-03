@@ -152,7 +152,7 @@ export default function HemingPage() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : '未知错误';
       setAnalysis(`合盘分析失败：${msg}`);
-      setApiMissing(true);
+      // 不再置 apiMissing：真实原因已写进 setAnalysis，标成「接口不存在」会误导用户
     } finally {
       setAnalyzing(false);
     }
@@ -305,7 +305,7 @@ export default function HemingPage() {
           {analysisError && (
             <div style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--bdr)', background: 'var(--bg-card)', fontSize: '13px', color: 'var(--tx-2)', marginTop: '12px' }}>
               {apiMissing
-                ? '开源版不含合盘 AI 分析接口（/api/heming），需要你自己实现后才能用。两人的命盘可以分别到「排盘」页（/chart）查看。'
+                ? '还没有配置 AI 模型 —— 点右上角「⚙ 模型设置」填入你自己的 API 密钥。'
                 : '分析暂时不可用，请重试。'}
             </div>
           )}

@@ -371,7 +371,7 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 
   return (
     <div
-      className="flex flex-col rounded-xl overflow-hidden card-glass"
+      className="glass flex flex-col rounded-xl overflow-hidden"
       style={{ height: "min(70dvh, 680px)", minHeight: 360 }}
     >
 

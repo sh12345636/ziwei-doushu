@@ -235,13 +235,11 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      className="glass-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl p-5 max-h-[85vh] overflow-y-auto"
-        style={{ background: 'var(--t-bg)', border: '1px solid var(--t-border)' }}
+        className="glass w-full max-w-md rounded-2xl p-5 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4">

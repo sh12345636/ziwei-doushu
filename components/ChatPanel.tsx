@@ -95,7 +95,7 @@ export default function ChatPanel({ chart }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden card-glass">
+    <div className="glass flex flex-col h-full rounded-xl overflow-hidden">
       {/* 标题 */}
       <div className="px-4 py-3 flex-shrink-0 flex items-start justify-between" style={{ borderBottom: '1px solid var(--t-border)' }}>
         <div>
