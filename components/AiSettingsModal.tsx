@@ -38,6 +38,8 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const [hideKey, setHideKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const baseRef = useRef<HTMLInputElement>(null);
   const keyRef = useRef<HTMLInputElement>(null);
@@ -124,6 +126,55 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
     const domVal = keyRef.current?.value;
     if (typeof domVal === 'string') setApiKey(domVal);
     setHideKey((v) => !v);
+  };
+
+  /** 发一个最小请求验证配置是否真的能用（非流式，避开流式解析的干扰） */
+  const handleTest = async () => {
+    const cfg = {
+      baseURL: readValue(baseRef, baseURL),
+      apiKey: readValue(keyRef, apiKey),
+      model: readValue(modelRef, model),
+    };
+    if (!cfg.baseURL || !cfg.apiKey || !cfg.model) {
+      setError('请先填写完整再测试');
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    setError('');
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 25000);
+    try {
+      const res = await fetch(cfg.baseURL.replace(/\/+$/, '') + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [{ role: 'user', content: '你好' }],
+          max_tokens: 10,
+          stream: false,
+        }),
+        signal: ac.signal,
+      });
+      const body = await res.text();
+      if (res.ok) {
+        setTestResult({ ok: true, msg: `✓ 连接成功（HTTP ${res.status}），配置可用` });
+      } else {
+        setTestResult({ ok: false, msg: `HTTP ${res.status}：${body.slice(0, 220)}` });
+      }
+    } catch (e) {
+      const isAbort = e instanceof DOMException && e.name === 'AbortError';
+      setTestResult({
+        ok: false,
+        msg: isAbort
+          ? '请求超时（25 秒），网络可能不通'
+          : `网络错误：${e instanceof Error ? e.message : String(e)}\n常见原因：接口地址写错 / 该服务未开放浏览器跨域(CORS)`,
+      });
+    } finally {
+      clearTimeout(timer);
+      setTesting(false);
+    }
   };
 
   const handleClear = () => {
@@ -310,7 +361,34 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
           </div>
         )}
 
+        {testResult && (
+          <div
+            className="text-[11px] rounded-lg px-3 py-2 mb-3 leading-relaxed whitespace-pre-wrap break-all"
+            style={{
+              color: testResult.ok ? '#10b981' : '#ff8a8a',
+              background: testResult.ok ? 'rgba(16,185,129,0.08)' : 'rgba(255,80,80,0.08)',
+              border: `1px solid ${testResult.ok ? 'rgba(16,185,129,0.25)' : 'rgba(255,80,80,0.25)'}`,
+            }}
+          >
+            {testResult.msg}
+          </div>
+        )}
+
         {/* 按钮 */}
+        <div className="flex gap-2 mb-2">
+          <button
+            onClick={handleTest}
+            className="flex-1 rounded-lg py-2 text-xs font-medium transition-all"
+            style={{
+              background: 'var(--ac-bg)',
+              border: '1px solid var(--bdr)',
+              color: 'var(--tx-2)',
+            }}
+          >
+            {testing ? '测试中…' : '测试连接'}
+          </button>
+        </div>
+
         <div className="flex gap-2">
           <button
             onClick={handleSave}

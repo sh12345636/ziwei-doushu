@@ -6,7 +6,7 @@
  *   2. package.json 的 version
  *   3. android/app/build.gradle 的 versionName / versionCode
  */
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 /** 版本号 + 日期，展示用 */
 export const APP_VERSION_LABEL = `v${APP_VERSION}`;

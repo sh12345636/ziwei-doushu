@@ -111,6 +111,16 @@ export async function* streamChatClient(
 ): AsyncGenerator<string, void, unknown> {
   const url = cfg.baseURL.replace(/\/+$/, '') + '/chat/completions';
 
+  // 超时保护：接口挂住时不能让界面永久卡在「生成中」
+  const ac = new AbortController();
+  const TIMEOUT_MS = 90000;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const clearTimer = () => {
+    if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+  };
+  const onUserAbort = () => ac.abort();
+  opts.signal?.addEventListener('abort', onUserAbort);
+
   let res: Response;
   try {
     res = await fetch(url, {
@@ -126,12 +136,16 @@ export async function* streamChatClient(
         temperature: opts.temperature ?? 0.75,
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       }),
-      signal: opts.signal,
+      signal: ac.signal,
     });
   } catch (err) {
     // 网络层错误：CORS 被拦 / 断网 / 地址写错，表现都是一样的
+    clearTimer();
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
-    if (isAbort) throw new Error('已取消');
+    if (isAbort) {
+      if (opts.signal?.aborted) throw new Error('已取消');
+      throw new Error(`请求超时（${TIMEOUT_MS / 1000} 秒无响应）。请检查网络或接口地址。`);
+    }
     throw new Error(
       `无法连接模型接口：${url}\n` +
         `常见原因：① 接口地址写错 ② 该服务未开放浏览器跨域(CORS) ③ 网络不通。\n` +
@@ -191,26 +205,44 @@ export async function* streamChatClient(
     return out;
   };
 
+  let deltaCount = 0;
+  let rawSample = '';
+
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      const chunkText = decoder.decode(value, { stream: true });
+      if (rawSample.length < 800) rawSample += chunkText.slice(0, 800 - rawSample.length);
+      buffer += chunkText;
 
       let idx: number;
       while ((idx = buffer.search(/\r?\n\r?\n/)) !== -1) {
         const rawEvent = buffer.slice(0, idx);
         buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, '');
-        for (const d of parseEvent(rawEvent)) yield d;
+        for (const d of parseEvent(rawEvent)) { deltaCount++; yield d; }
       }
     }
 
     // 流结束时缓冲区可能残留最后一个事件（有些服务端末尾不带空行）
     buffer += decoder.decode();
     if (buffer.trim()) {
-      for (const d of parseEvent(buffer)) yield d;
+      for (const d of parseEvent(buffer)) { deltaCount++; yield d; }
+    }
+    // 一个 delta 都没收到：把原始响应当线索抛出来，别让用户对着空白猜
+    if (deltaCount === 0) {
+      const sample = rawSample.trim();
+      if (!sample) {
+        throw new Error('模型返回了空响应。请检查「⚙ 模型设置」里的接口地址与模型名。');
+      }
+      if (sample.startsWith('{')) {
+        throw new Error(`模型返回的不是流式格式，原始内容：${sample.slice(0, 300)}`);
+      }
+      throw new Error(`模型没有返回可识别的内容，原始响应：${sample.slice(0, 300)}`);
     }
   } finally {
+    clearTimer();
+    opts.signal?.removeEventListener('abort', onUserAbort);
     // 提前退出（用户取消/抛错）时释放底层连接
     reader.cancel().catch(() => undefined);
   }
