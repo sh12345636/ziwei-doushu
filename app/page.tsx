@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, useScroll, useTransform, useInView, AnimatePresence } from 'framer-motion';
 import StarField from '@/components/StarField';
+import AiSettingsModal from '@/components/AiSettingsModal';
 import { useTheme, type Theme } from '@/components/ThemeProvider';
 // import AnnouncementModal from '@/components/AnnouncementModal'; // 已停用：内容是过期的 5 月限时活动
 
@@ -449,6 +450,8 @@ function FeatureVisual({ index, colors: c }: { index: number; colors: ReturnType
 
 // ─── 主页 ─────────────────────────────────────────────────
 export default function HomePage() {
+  // 首页就能配模型，不必先起盘再进 AI 面板
+  const [showAiSettings, setShowAiSettings] = useState(false);
   const router = useRouter();
   const { theme } = useTheme();
   const c = useColors(theme);
@@ -503,6 +506,14 @@ export default function HomePage() {
           <ThemeToggle />
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+            onClick={() => setShowAiSettings(true)}
+            title="模型设置：填自己的 API 密钥"
+            className="text-[11px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition-all duration-300"
+            style={{ border: `1px solid ${c.navBorder}`, color: c.textMuted }}>
+            ⚙ 模型
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
             onClick={() => router.push('/heming')}
             className="text-[11px] sm:text-xs px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-full transition-all duration-300"
             style={{ border: `1px solid ${c.navBorder}`, color: c.textMuted }}>
@@ -517,6 +528,8 @@ export default function HomePage() {
           </motion.button>
         </div>
       </nav>
+
+      <AiSettingsModal open={showAiSettings} onClose={() => setShowAiSettings(false)} />
 
       {/* ══ HERO ══════════════════════════════════════════ */}
       <section ref={heroRef} className="relative min-h-[82svh] lg:min-h-[92vh] flex flex-col items-center justify-center px-6 z-10 pb-24 pt-10">

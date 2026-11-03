@@ -21,6 +21,7 @@ import {
   loadAiConfig,
   saveAiConfig,
   type UserAiConfig,
+  fetchAvailableModels,
 } from '@/lib/ai/client';
 import { APP_VERSION_LABEL } from '@/lib/version';
 
@@ -40,6 +41,8 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
   const [error, setError] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   const baseRef = useRef<HTMLInputElement>(null);
   const keyRef = useRef<HTMLInputElement>(null);
@@ -126,6 +129,33 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
     const domVal = keyRef.current?.value;
     if (typeof domVal === 'string') setApiKey(domVal);
     setHideKey((v) => !v);
+  };
+
+  /** 向上游拉取可用模型列表 */
+  const handleFetchModels = async () => {
+    const base = readValue(baseRef, baseURL);
+    const key = readValue(keyRef, apiKey);
+    if (!base || !key) {
+      setError('请先填写「接口地址」和「API 密钥」');
+      return;
+    }
+    setLoadingModels(true);
+    setError('');
+    setModels([]);
+    try {
+      const list = await fetchAvailableModels({ baseURL: base, apiKey: key });
+      setModels(list);
+      if (!list.length) setError('上游没有返回任何模型');
+    } catch (e) {
+      setError(`拉取模型失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const pickModel = (m: string) => {
+    setModel(m);
+    if (modelRef.current) modelRef.current.value = m;
   };
 
   /** 发一个最小请求验证配置是否真的能用（非流式，避开流式解析的干扰） */
@@ -319,6 +349,45 @@ export default function AiSettingsModal({ open, onClose, onSaved }: Props) {
             className="w-full mt-1 rounded-lg px-3 py-2 text-xs focus:outline-none"
             style={inputStyle}
           />
+        </div>
+
+        {/* 拉取上游模型列表 */}
+        <div className="mb-4">
+          <button
+            onClick={handleFetchModels}
+            className="w-full rounded-lg py-2 text-xs transition-all"
+            style={{
+              background: 'var(--ac-bg)',
+              border: '1px solid var(--bdr)',
+              color: 'var(--tx-2)',
+            }}
+          >
+            {loadingModels ? '正在拉取…' : '🔍 拉取该服务的可用模型'}
+          </button>
+
+          {models.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[9px] mb-1.5" style={{ color: 'var(--t-faint)' }}>
+                共 {models.length} 个模型，点一下即填入：
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {models.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => pickModel(m)}
+                    className="text-[10px] px-2 py-1 rounded-md transition-all"
+                    style={{
+                      color: model === m ? 'var(--t-gold)' : 'var(--t-text2)',
+                      border: `1px solid ${model === m ? 'var(--ac-bdr)' : 'var(--bdr)'}`,
+                      background: model === m ? 'var(--ac-bg)' : 'transparent',
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 提示 */}

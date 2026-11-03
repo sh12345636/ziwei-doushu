@@ -172,7 +172,14 @@ export async function* streamChatClient(
 
   /** SSE 事件里可能出现的字段 */
   type StreamEvent = {
-    choices?: { delta?: { content?: string } }[];
+    choices?: {
+      delta?: {
+        /** 正文 */
+        content?: string | null;
+        /** 推理模型的思维链（deepseek-v4-pro / o1 之类） */
+        reasoning_content?: string | null;
+      };
+    }[];
     error?: { message?: string };
   };
 
@@ -200,19 +207,25 @@ export async function* streamChatClient(
       }
 
       const delta = json.choices?.[0]?.delta?.content;
-      if (delta) out.push(delta);
+      const reason = json.choices?.[0]?.delta?.reasoning_content;
+      if (typeof reason === 'string' && reason) reasoning += reason;
+      if (typeof delta === 'string' && delta) out.push(delta);
     }
     return out;
   };
 
   let deltaCount = 0;
   let rawSample = '';
+  // 推理模型会先吐一大段思维链，正文迟迟不来；它也算"有数据在动"，要重置超时
+  let reasoning = '';
+  let lastActivity = Date.now();
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunkText = decoder.decode(value, { stream: true });
+      lastActivity = Date.now();
       if (rawSample.length < 800) rawSample += chunkText.slice(0, 800 - rawSample.length);
       buffer += chunkText;
 
@@ -221,6 +234,9 @@ export async function* streamChatClient(
         const rawEvent = buffer.slice(0, idx);
         buffer = buffer.slice(idx).replace(/^\r?\n\r?\n/, '');
         for (const d of parseEvent(rawEvent)) { deltaCount++; yield d; }
+        if (Date.now() - lastActivity > 45000) {
+          throw new Error('模型 45 秒没有输出任何数据，已中断。请检查网络或换一个模型。');
+        }
       }
     }
 
@@ -229,6 +245,13 @@ export async function* streamChatClient(
     if (buffer.trim()) {
       for (const d of parseEvent(buffer)) { deltaCount++; yield d; }
     }
+    // 只有思维链、没有正文：推理模型常见。把思维链交给用户，总比报错强
+    if (deltaCount === 0 && reasoning.trim()) {
+      yield '（这个模型只返回了思考过程，没有正式回答。建议把模型换成 deepseek-chat 或 deepseek-flash，速度快且直接出正文）\n\n';
+      yield reasoning;
+      deltaCount = 1;
+    }
+
     // 一个 delta 都没收到：把原始响应当线索抛出来，别让用户对着空白猜
     if (deltaCount === 0) {
       const sample = rawSample.trim();
@@ -245,5 +268,52 @@ export async function* streamChatClient(
     opts.signal?.removeEventListener('abort', onUserAbort);
     // 提前退出（用户取消/抛错）时释放底层连接
     reader.cancel().catch(() => undefined);
+  }
+}
+
+/**
+ * 向上游拉取可用模型列表（OpenAI 兼容的 GET /models）
+ *
+ * 用户填好地址和密钥后，点一下就能看到这个服务到底有哪些模型可选，
+ * 不用猜模型名（猜错是「模型没有返回内容」最常见的原因）。
+ */
+export async function fetchAvailableModels(cfg: {
+  baseURL: string;
+  apiKey: string;
+}): Promise<string[]> {
+  const url = cfg.baseURL.replace(/\/+$/, '') + '/models';
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 25000);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${cfg.apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: ac.signal,
+    });
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${detail ? `：${detail.slice(0, 150)}` : ''}`);
+    }
+
+    const json = (await res.json()) as unknown;
+    const data = (json as { data?: unknown }).data;
+    if (!Array.isArray(data)) throw new Error('返回格式不是 OpenAI 兼容的模型列表');
+
+    const ids = data
+      .map((m) => (m as { id?: unknown }).id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    return Array.from(new Set(ids)).sort();
+  } catch (e) {
+    const isAbort = e instanceof DOMException && e.name === 'AbortError';
+    if (isAbort) throw new Error('拉取超时（25 秒），网络可能不通');
+    throw new Error(e instanceof Error ? e.message : String(e));
+  } finally {
+    clearTimeout(timer);
   }
 }
